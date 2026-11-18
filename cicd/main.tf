@@ -201,6 +201,7 @@ resource "aws_iam_role_policy" "codebuild" {
         Action = [
           "s3:GetBucketPolicy",
           "s3:GetBucketCORS",
+          "s3:GetBucketPublicAccessBlock",
           "s3:GetBucketWebsite",
           "s3:GetAccelerateConfiguration",
           "s3:GetBucketRequestPayment",
@@ -222,6 +223,11 @@ resource "aws_iam_role_policy" "codebuild" {
           "${local.app_bucket_arn}/releases/*",
           "${aws_s3_bucket.pipeline_artifacts.arn}/*",
         ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObjectTagging"]
+        Resource = "${local.app_bucket_arn}/releases/*"
       },
       {
         Effect = "Allow"
