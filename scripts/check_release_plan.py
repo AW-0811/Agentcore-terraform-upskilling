@@ -36,7 +36,10 @@ def main() -> int:
         print("Release plan contains unapproved Terraform actions:", file=sys.stderr)
         for action in unexpected:
             print(f"  {action}", file=sys.stderr)
-        print("The existing AgentCore runtime must never be created or replaced by this pipeline.", file=sys.stderr)
+        print(
+            "The existing AgentCore runtime must never be created or replaced by this pipeline.",
+            file=sys.stderr,
+        )
         return 1
 
     print("Release plan passed the resource-action guard.")
