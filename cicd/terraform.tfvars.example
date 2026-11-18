@@ -1,0 +1,5 @@
+# Copy this file to terraform.tfvars and replace the placeholders with outputs
+# from the application and bootstrap Terraform roots. terraform.tfvars is gitignored.
+state_bucket_name        = "REPLACE_WITH_BOOTSTRAP_OUTPUT"
+app_artifact_bucket_name = "REPLACE_WITH_APPLICATION_OUTPUT"
+agent_runtime_arn        = "arn:aws:bedrock-agentcore:us-east-2:ACCOUNT_ID:runtime/RUNTIME_ID"

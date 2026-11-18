@@ -1,0 +1,74 @@
+# Credentials, local account configuration, and private agent settings
+.aws/
+.codex/
+.env
+.env.*
+!.env.example
+credentials
+*credentials*.json
+auth.json
+*.pem
+*.key
+
+# Local project plan and detailed notes (user-requested exclusions)
+/PROJECT_PLAN.md
+/docs/
+
+# Terraform local data, state, plans, and real variable values
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.plan
+*.plan.*
+tfplan*
+plan.json
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+crash.log
+crash.*.log
+# Commit .terraform.lock.hcl when Terraform is introduced.
+
+# Local tools, Python environments, caches, and generated artifacts
+.tools/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage*
+htmlcov/
+coverage.xml
+*.egg-info/
+build/
+dist/
+artifacts/
+deployment_package/
+*.zip
+*.log
+Thumbs.db
+.DS_Store
+
+# Local documentation, plans, and handoff notes
+*.[mM][dD]
+*.[mM][aA][rR][kK][dD][oO][wW][nN]
+!/flow.md
+!/setup terraform cicid.md
+!/README.md
+!/CICD.md
+!/OBSERVABILITY.md
+!/THINGS_TO_EXPLORE.md
+
+# Local AI assistant settings and working files
+.agents/
+.claude/
+.cursor/
+.windsurf/
+.aider*
+.cursorrules
+.cursorignore
+.windsurfrules
+.clinerules

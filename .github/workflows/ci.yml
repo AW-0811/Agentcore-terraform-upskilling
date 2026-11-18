@@ -1,0 +1,47 @@
+name: Verify incident triage agent
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.10.0"
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.14.5"
+          terraform_wrapper: false
+
+      - name: Check Python code
+        run: |
+          uv sync --locked
+          uv run --locked ruff format --check .
+          uv run --locked ruff check .
+          uv run --locked pytest -q
+
+      - name: Build Linux ARM64 release ZIP
+        run: uv run --locked python build.py
+
+      - name: Check Terraform
+        run: |
+          terraform fmt -check -recursive
+          for dir in . bootstrap cicd; do
+            terraform -chdir="$dir" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="$dir" validate
+          done

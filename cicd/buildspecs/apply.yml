@@ -1,0 +1,23 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - curl -fsSL https://astral.sh/uv/0.10.2/install.sh | sh
+      - curl -fsSLo /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.14.5/terraform_1.14.5_linux_amd64.zip
+      - curl -fsSLo /tmp/terraform_SHA256SUMS https://releases.hashicorp.com/terraform/1.14.5/terraform_1.14.5_SHA256SUMS
+      - grep 'terraform_1.14.5_linux_amd64.zip$' /tmp/terraform_SHA256SUMS | sha256sum -c -
+      - unzip -oq /tmp/terraform.zip -d /tmp/terraform
+      - export PATH="/tmp/terraform:$HOME/.local/bin:$PATH"
+  pre_build:
+    commands:
+      - export PATH="/tmp/terraform:$HOME/.local/bin:$PATH"
+      - export AWS_DEFAULT_REGION=us-east-2
+      - test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+      - uv sync --locked
+      - terraform init -input=false -lockfile=readonly -backend-config="bucket=$TF_STATE_BUCKET"
+  build:
+    commands:
+      - terraform apply -input=false -no-color -lock-timeout=2m -auto-approve release.tfplan
+      - runtime_arn="$(terraform output -raw runtime_arn)"
+      - uv run --locked --with 'boto3[crt]==1.44.5' python smoke.py --runtime-arn "$runtime_arn"
