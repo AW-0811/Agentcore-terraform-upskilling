@@ -138,8 +138,7 @@ resource "aws_iam_role_policy" "codepipeline" {
         Resource = aws_codeconnections_connection.github.arn
         Condition = {
           StringEquals = {
-            "codeconnections:FullRepositoryId"            = local.repository_full_id
-            "codeconnections:ProviderPermissionsRequired" = "read_only"
+            "codeconnections:FullRepositoryId" = local.repository_full_id
           }
         }
       },
