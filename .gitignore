@@ -13,6 +13,8 @@ auth.json
 # Local project plan and detailed notes (user-requested exclusions)
 /PROJECT_PLAN.md
 /docs/
+/addons/
+/addons.zip
 
 # Terraform local data, state, plans, and real variable values
 .terraform/
@@ -55,20 +57,8 @@ Thumbs.db
 # Local documentation, plans, and handoff notes
 *.[mM][dD]
 *.[mM][aA][rR][kK][dD][oO][wW][nN]
-!/flow.md
 !/setup terraform cicid.md
 !/README.md
-!/CICD.md
-!/OBSERVABILITY.md
-!/THINGS_TO_EXPLORE.md
 
 # Local AI assistant settings and working files
 .agents/
-.claude/
-.cursor/
-.windsurf/
-.aider*
-.cursorrules
-.cursorignore
-.windsurfrules
-.clinerules
