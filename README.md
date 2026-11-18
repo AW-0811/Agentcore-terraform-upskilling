@@ -1,29 +1,30 @@
-# Incident triage agent
+# Incident triage agent on Amazon Bedrock AgentCore
 
-This demo answers one question: “Why is checkout returning 503s?” It looks up two sample log events, then asks GPT‑6 Luna to summarize the evidence and suggest what to check next. If the lookup fails, it reports that the evidence is unavailable and skips the model call.
+A small, reproducible serverless agent demo. Give it an incident question; it looks up sample log evidence, asks an OpenAI model to summarize what the evidence suggests, and returns the summary with evidence IDs. A built-in failure scenario shows how the app responds when evidence is unavailable.
 
-The app is Python 3.13 and uses the OpenAI Agents SDK with medium reasoning. Amazon Bedrock AgentCore Runtime runs the Python code on AWS, OpenAI provides the model, and CloudWatch shows what happened in each request. Terraform manages the AWS resources that host the app. The last verified AWS release was version **3** on the `DEFAULT` endpoint in **US East (Ohio)**. [AgentCore deployment guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-get-started-code-deploy-python.html) · [Release and trace evidence](flow.md#11-deploy-and-verify-the-openai-agents-sdk-release)
+The repository includes the agent, OpenTelemetry instrumentation, CloudWatch observability resources, Terraform infrastructure, GitHub CI, and an AWS deployment pipeline. The public setup below is for creating **your own isolated copy**. The existing demo is already deployed in the original owner's AWS project; you do not need that AWS project to try the local demo.
 
-## What is in this folder?
+## Architecture at a glance
 
-| File | What it does |
-| --- | --- |
-| [main.py](main.py) | Receives requests, loads the model key when needed, runs the Agents SDK, and records trace steps. |
-| [triage.py](triage.py) | Defines the incident logic and sample events. Handles a failed evidence lookup. |
-| [test_triage.py](test_triage.py), [smoke.py](smoke.py) | Run unit tests and send the two demo requests to the local or AWS endpoint. |
-| [build.py](build.py) | Packages the Python app and its dependencies as `dist/agent.zip` for Linux ARM64. |
-| [main.tf](main.tf) | Sets up the private S3 bucket and ZIP object, the runtime's IAM role and permissions, and AgentCore Runtime. |
-| [observability.tf](observability.tf), [OBSERVABILITY.md](OBSERVABILITY.md) | Configures the CloudWatch dashboard, error alarms, and 30-day runtime log retention. |
-| [bootstrap/](bootstrap/), [cicd/](cicd/), [CICD.md](CICD.md) | Set up protected remote Terraform state and GitHub-to-AWS delivery through CodePipeline and CodeBuild. |
-| [pyproject.toml](pyproject.toml), [uv.lock](uv.lock), [.python-version](.python-version) | Define and pin the Python environment. |
-| [.terraform-version](.terraform-version), [.terraform.lock.hcl](.terraform.lock.hcl) | Pin Terraform and its AWS provider. |
-| [.env.example](.env.example) | Shows the variable name to use in an ignored `.env` file for a local live model test. |
-| [flow.md](flow.md) | Explains how the project was built, deployed, and verified. Includes console test inputs and CloudWatch evidence. |
-| [THINGS_TO_EXPLORE.md](THINGS_TO_EXPLORE.md), [setup terraform cicid.md](<setup terraform cicid.md>) | Cover multi-agent experiments and the historical CI/CD design notes. |
+```text
+User request
+  -> Amazon Bedrock AgentCore Runtime
+      -> sample evidence lookup
+      -> OpenAI Responses API (credential from AWS Secrets Manager)
+  -> response with status, summary, evidence IDs, and request ID
 
-## Run it on your laptop
+GitHub push -> GitHub Actions CI
+            -> AWS CodePipeline / CodeBuild
+            -> checks + Linux ARM64 ZIP + Terraform plan
+            -> manual plan approval -> Terraform apply -> live smoke checks
 
-Install uv and run these PowerShell commands from the project folder. The offline demo uses a fixed summary and needs only the local Python environment. [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+AgentCore logs, traces, and metrics -> CloudWatch / AgentCore Observability
+Terraform-managed dashboard, alarms, and 30-day runtime log retention
+```
+
+## Try it locally first
+
+Prerequisites: Python 3.13 (or let `uv` install it) and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```powershell
 uv sync --locked
@@ -32,21 +33,93 @@ $env:TRIAGE_OFFLINE = '1'
 uv run --locked python main.py
 ```
 
-With the server running, open a second terminal in the same folder.
+In another terminal, from the repository directory:
 
 ```powershell
 uv run --locked python smoke.py
 ```
 
-The normal request should return `ok` with `evt-001` and `evt-002`. The simulated failure should return `evidence_unavailable` with an empty evidence list.
+The normal example returns `ok` with evidence IDs `evt-001` and `evt-002`. The failure example returns `evidence_unavailable`. Offline mode uses a fixed summary and needs no AWS credentials or model API key.
 
-For a real OpenAI call on your laptop, put your key in the ignored `.env` as `OPENAI_API_KEY`. Stop the offline server, then start it with `$env:TRIAGE_OFFLINE = '0'` and `uv run --locked --env-file .env python main.py`. Run `uv run --locked python smoke.py --local-live` in the second terminal. This uses your OpenAI API account.
+To make a real OpenAI call locally, create an OpenAI API key and place it in a local `.env` file (ignored by Git):
 
-## Use it on AWS
+```text
+OPENAI_API_KEY=your-key
+```
 
-- To **try the existing demo**, open AgentCore in Ohio, select **Agents → incident_triage_demo → Endpoints → DEFAULT → Test endpoint**, then paste the normal and failure payloads. Open Observability and look for the traces from those requests. [AWS console](https://console.aws.amazon.com/bedrock-agentcore/home?region=us-east-2) · [Demo payloads](flow.md#try-the-agent-in-the-console) · [CloudWatch evidence](flow.md#11-deploy-and-verify-the-openai-agents-sdk-release)
-- To **deploy an update**, use Terraform 1.14.5, working AWS credentials in the `agentcore-test` profile for Ohio, and the Terraform state that already owns the deployment. AWS Secrets Manager in Ohio needs a secret named `incident-triage-demo/openai` with the key field `OPENAI_API_KEY`. The runtime reads it through its IAM role. Build the ZIP with `uv run --locked python build.py`, review the Terraform plan, then apply and run the two AWS smoke cases. [Secret setup](flow.md#store-the-key-for-aws) · [Release commands](flow.md#11-deploy-and-verify-the-openai-agents-sdk-release)
+Start the server with `$env:TRIAGE_OFFLINE = '0'; uv run --locked --env-file .env python main.py` and, in a second terminal, run `uv run --locked python smoke.py --local-live`. Model API use may incur charges.
 
-For a fresh AWS setup, create the secret first, build the ZIP, and run `terraform init` with the pinned version before planning. The first plan is expected to create the S3, IAM, and Runtime resources. For an existing deployment, locate its Terraform state before planning an update.
+## Deploy your own copy to AWS
 
-GitHub Actions runs CI checks. AWS CodePipeline and CodeBuild handle deployment through a manual approval step. The Terraform setup is documented in [CICD.md](CICD.md); first create the protected remote-state bucket, migrate the existing state, then connect the private GitHub repository in AWS Console. The older [CI/CD handoff notes](<setup terraform cicid.md>) are historical and include an OIDC approach that this AWS project blocks.
+This creates AWS resources in your selected Region and can incur charges. Review the AWS console billing/spend settings, service availability, and each Terraform plan before applying. The current example is configured for `us-east-2` (US East, Ohio); changing Regions requires updating the provider/backend settings consistently.
+
+Prerequisites:
+
+- An AWS project with access to Amazon Bedrock AgentCore, S3, IAM, Secrets Manager, CloudWatch, CodePipeline, CodeBuild, and CodeConnections in the selected Region.
+- AWS CLI v2, Terraform **1.14.5**, Python 3.13, and `uv`.
+- An OpenAI API key. It is stored in your own AWS Secrets Manager secret, never committed to Git.
+- A GitHub repository for your copy, and authorization of the AWS CodeConnections GitHub App to that repository.
+
+### 1. Authenticate and create your model secret
+
+Sign in using the AWS authentication method configured for your project. Confirm the selected AWS identity and Region before creating resources. Create a Secrets Manager secret containing a JSON object with the key `OPENAI_API_KEY`. The Terraform configuration currently expects the secret name `incident-triage-demo/openai`; change that setting in `main.tf` if you want a different name.
+
+### 2. Build and deploy the application
+
+```powershell
+uv sync --locked
+uv run --locked pytest -q
+uv run --locked python build.py
+$env:AWS_PROFILE = 'your-aws-profile'
+$env:AWS_DEFAULT_REGION = 'us-east-2'
+terraform init -backend-config="bucket=YOUR_EXISTING_STATE_BUCKET"
+terraform plan -out=release.tfplan
+terraform show release.tfplan
+```
+
+For a brand-new project, create and review the protected remote-state bucket using `bootstrap/` first. The detailed bootstrap, state, and deployment steps are in [CICD.md](CICD.md). The S3 backend must be supplied a bucket name at initialization. Keep Terraform state private: it can contain sensitive infrastructure data.
+
+Review the plan carefully before `terraform apply release.tfplan`. A first deployment should create a runtime and supporting resources; an update to an existing deployment should update the intended runtime in place. Do not point a new checkout at someone else's Terraform state or reuse their runtime name and AWS resources.
+
+### 3. Add automated AWS delivery (optional)
+
+GitHub Actions runs code checks, tests, packaging, and Terraform validation. The AWS CodePipeline/CodeBuild Terraform root (`cicd/`) adds the AWS delivery pipeline for a repository you control. It creates an AWS connection, build projects, roles, and pipeline resources; finish the GitHub authorization in the AWS Console after Terraform creates the pending connection. The pipeline builds and tests, creates a Terraform plan, checks it with a resource-action guard, pauses for human approval, then applies the reviewed plan and invokes the live smoke cases.
+
+Follow [CICD.md](CICD.md) for the full sequence. That guide explains how to create and migrate remote state, configure your repository owner/name and runtime outputs, authorize CodeConnections, and review the pipeline plan. The pipeline template currently expects an existing runtime; deploy the app first. Review its plan before applying it, because it creates AWS resources and can incur charges.
+
+## Observability
+
+The agent creates OpenTelemetry spans for the request, evidence lookup, and OpenAI call. The OpenAI span records model name and token usage. AgentCore runtime logs, traces, and service metrics are available through AgentCore Observability and CloudWatch. Terraform configures a CloudWatch dashboard for invocations, errors, throttles, latency, overhead, CPU, and memory; alarms for system errors and throttles; and 30-day retention on the runtime log group. The alarms currently have no email or paging action. See [OBSERVABILITY.md](OBSERVABILITY.md).
+
+## What is in the repository?
+
+| Path | Purpose |
+| --- | --- |
+| `main.py`, `triage.py` | AgentCore entry point, model call, evidence lookup, response, and OpenTelemetry spans. |
+| `test_triage.py`, `smoke.py` | Offline unit tests and local/deployed end-to-end checks. |
+| `build.py` | Reproducible Linux ARM64 runtime ZIP builder. |
+| `main.tf`, `observability.tf`, `backend.tf` | AgentCore app, IAM/S3 resources, CloudWatch observability, and remote state configuration. |
+| `bootstrap/` | Protected, versioned S3 bucket for Terraform remote state. |
+| `cicd/`, `.github/workflows/` | AWS CodePipeline/CodeBuild deployment and GitHub Actions CI. |
+| `CICD.md`, `OBSERVABILITY.md` | Setup instructions and observability details. |
+| `flow.md`, `THINGS_TO_EXPLORE.md` | Project learning notes and follow-on experiments. |
+
+## Known limits
+
+- The evidence source is sample data, not a connection to a real incident or log system.
+- The agent is a learning demo, not an autonomous production incident responder.
+- CloudWatch alarms show state but do not notify anyone until you configure an alarm action and recipient.
+- The deployment pipeline includes a manual approval gate by design.
+- The original owner's live deployment and AWS state are separate from a public user's copy.
+
+## Five things I learned building this
+
+1. **An AI agent still needs ordinary software engineering.** Keep tool behavior, error handling, tests, and model calls understandable and independently checkable.
+2. **Serverless does not mean “no infrastructure.”** AgentCore runs the workload, while IAM, S3, Secrets Manager, networking, and logs still need explicit configuration.
+3. **Credentials belong outside the code.** The local demo uses an ignored `.env`; the deployed runtime reads its model key from Secrets Manager through an IAM role.
+4. **Observability helps explain a request.** Traces can show the evidence and model steps, while CloudWatch metrics and logs help diagnose runtime health. Instrumentation only helps if useful signals are emitted and retained.
+5. **A safe pipeline makes infrastructure changes reviewable.** CI checks the change; Terraform plans show proposed infrastructure actions; a manual approval gate precedes apply; live smoke tests check the deployed behavior.
+
+## Learning notes
+
+This project was built as a hands-on introduction to serverless agents, AWS infrastructure, observability, and CI/CD. [THINGS_TO_EXPLORE.md](THINGS_TO_EXPLORE.md) has follow-on exercises. The detailed [flow.md](flow.md) is a historical build journal and includes owner-specific deployment evidence; use the setup guide above to deploy your own copy.

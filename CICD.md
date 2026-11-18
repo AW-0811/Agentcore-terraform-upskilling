@@ -1,54 +1,109 @@
-# GitHub CI and AWS delivery pipeline
+# Set up the AWS delivery pipeline
 
-## How the pieces fit
+This guide is for deploying your own copy of the agent from a GitHub repository you control. It assumes the agent runtime has already been deployed once. The AWS deployment flow is AWS CodePipeline coordinating AWS CodeBuild; GitHub Actions separately runs repository CI. AWS credentials are not stored in GitHub.
 
-- GitHub Actions runs pull-request checks without AWS credentials.
-- AWS CodePipeline watches `AW-0811/Agentcore-terraform-upskilling` on `main` through CodeConnections.
-- CodeBuild runs the tests, builds the Linux ARM64 agent ZIP, initializes the shared Terraform state, and creates a plan.
-- The pipeline pauses at a manual approval action. After approval, CodeBuild applies the saved plan and runs the two live smoke cases.
-- Terraform defines the state bucket, CodeConnections link, pipeline roles, artifact storage, CodeBuild projects, and CodePipeline.
+## How releases work
 
-Terraform declares and changes infrastructure; CodePipeline coordinates the stages and CodeBuild runs Terraform commands. This keeps the AWS pipeline configuration in Terraform and avoids putting AWS credentials in GitHub.
+1. A push to your configured branch is fetched through AWS CodeConnections.
+2. CodeBuild installs the pinned tools, runs Python checks and tests, builds the Linux ARM64 package, validates Terraform, and creates a saved Terraform plan.
+3. A release guard rejects unapproved infrastructure actions. The pipeline pauses so a person can inspect and approve the plan.
+4. A second CodeBuild job applies that exact saved plan and runs two smoke requests against the runtime.
 
-## Why this uses CodePipeline for AWS deployment
+The pipeline's manual approval is intentional. It is possible to remove it later, but auto-apply is only appropriate after you understand the plan guard, have isolated test and production environments, and have a reliable rollback process.
 
-This AWS project explicitly denies IAM OIDC provider actions (`iam:*Provider*`), so GitHub Actions cannot federate directly into an AWS deployment role. The project supports CodePipeline and CodeConnections. CodeConnections uses a GitHub App authorization that you complete in the AWS Console.
+## Before you start
 
-The `aws_codeconnections_connection` resource is created as `PENDING`. In AWS Console, open **Developer Tools → Settings → Connections**, choose the pending `incident-triage-github` connection, and finish the GitHub App authorization for this repository. Confirm it becomes `AVAILABLE` before starting a pipeline execution.
+- AWS CLI v2, Terraform **1.14.5**, Python 3.13, and `uv`.
+- AWS credentials for the target project with permissions to create the listed resources.
+- Your own GitHub repository and permission to authorize the AWS CodeConnections GitHub App.
+- An AgentCore runtime deployed from this repository, with the expected runtime IAM role and Secrets Manager secret.
+- A plan review before every Terraform apply. The state bucket, pipeline, CodeBuild, CloudWatch, S3, and AgentCore usage may incur charges.
 
-## Terraform state
+The Terraform roots currently target `us-east-2`. To use another selected Region, consistently change the provider and backend Region settings in the application, `bootstrap/`, and `cicd/`; then use that Region for AWS CLI and console operations.
 
-`bootstrap/` creates a private, versioned S3 bucket with server-side encryption and a TLS-only bucket policy. Its own state stays local and is ignored by Git. The application and `cicd/` Terraform roots store their state in separate keys in that bucket and use native S3 lock files. Keep the state bucket; the bootstrap resource has `prevent_destroy` enabled.
+## 1. Sign in and check the target
 
-The CodePipeline artifact bucket is private and encrypted with S3-managed encryption. Pipeline artifacts expire after 30 days. CodeBuild log groups retain logs for 30 days and use CloudWatch Logs encryption at rest.
-
-## Local AWS authentication
-
-Keep `agentcore-test` signed in with `aws login`. Terraform 1.14.5's S3 backend does not read that newer console-login cache directly. AWS recommends a `credential_process` profile for older development tools. Create `agentcore-terraform` once, pointing to the existing short-lived session; this does not create or store static AWS keys:
+Use the sign-in method configured for your AWS project. Then set the profile and Region for this terminal and confirm the identity before proceeding:
 
 ```powershell
-$awsExe = (Get-Command aws.exe -ErrorAction SilentlyContinue).Source
-if (-not $awsExe) { $awsExe = Join-Path $env:LOCALAPPDATA 'Programs\Amazon\AWSCLIV2\aws.exe' }
-aws configure set profile.agentcore-terraform.credential_process "`"$awsExe`" configure export-credentials --profile agentcore-test --format process"
-aws configure set profile.agentcore-terraform.region us-east-2
-$env:AWS_PROFILE = 'agentcore-terraform'
+$env:AWS_PROFILE = 'your-aws-profile'
+$env:AWS_DEFAULT_REGION = 'us-east-2'
+aws sts get-caller-identity --region $env:AWS_DEFAULT_REGION
 ```
 
-The CLI still uses `agentcore-test` when called with that profile; use `agentcore-terraform` for local Terraform commands so both the S3 backend and AWS provider can obtain temporary credentials.
+The displayed identity must belong to the AWS project where you intend to deploy. Do not use another person's local profile or Terraform state.
 
-## Release safety
+## 2. Create the protected Terraform state bucket
 
-The CodeBuild plan stage writes `release.tfplan` into a private pipeline artifact and runs `scripts/check_release_plan.py`. The guard allows updates to the existing runtime and the expected ZIP replacement. It rejects creation or replacement of `aws_bedrockagentcore_agent_runtime.triage`, changes to the execution role, and other unapproved resource actions. Apply runs only after a person approves the plan stage.
+The `bootstrap/` root creates a private, versioned S3 bucket with server-side encryption, a TLS-only bucket policy, and deletion protection. Its own state remains local, so do not delete the bootstrap folder's local state after applying.
 
-The apply stage uses that saved plan, waits for Terraform to finish, then runs `smoke.py` against the runtime ARN in Terraform output. Expected results are `incident: ok` and `tool_failure: evidence_unavailable`.
+```powershell
+terraform -chdir=bootstrap init
+terraform -chdir=bootstrap fmt -check
+terraform -chdir=bootstrap validate
+terraform -chdir=bootstrap plan -out=bootstrap.tfplan
+terraform -chdir=bootstrap show bootstrap.tfplan
+terraform -chdir=bootstrap apply bootstrap.tfplan
+$stateBucket = terraform -chdir=bootstrap output -raw state_bucket_name
+```
 
-## First-time setup sequence
+Confirm the plan creates only the state bucket protections. Back up `bootstrap/terraform.tfstate` securely; state may contain sensitive values. Never commit it.
 
-1. Set `$env:AWS_PROFILE = 'agentcore-terraform'` and `$env:AWS_DEFAULT_REGION = 'us-east-2'`. In `bootstrap/`, review and apply a Terraform plan. This creates only the protected remote-state bucket.
-2. Back up `terraform.tfstate`, then set `$stateBucket = terraform -chdir=bootstrap output -raw state_bucket_name`. In the application root, run `terraform init -migrate-state -backend-config="bucket=$stateBucket"`. Terraform will ask to copy the existing local state; confirm only after verifying the backup exists.
-3. In the application root, run `terraform plan`. It should show the new `artifact_bucket_name` output and no resource changes. Apply to save the output in the migrated state. Then initialize `cicd/` with `terraform -chdir=cicd init -backend-config="bucket=$stateBucket"`.
-4. Copy `cicd/terraform.tfvars.example` to the ignored `cicd/terraform.tfvars` and fill in the state bucket name plus `terraform output -raw artifact_bucket_name` and `terraform output -raw runtime_arn`. Create `.tools/` if needed. Run and review `terraform -chdir=cicd plan -out=..\.tools\cicd.tfplan`; it should add pipeline resources without changing the existing AgentCore runtime. Apply only after reviewing that plan.
-5. The GitHub connection will start as `PENDING`. In AWS Console, open **Developer Tools → Settings → Connections**, select `incident-triage-github`, and authorize the `AW-0811/Agentcore-terraform-upskilling` repository. Wait for status `AVAILABLE`.
-6. Review the local Git commit and staged filenames, then push to the repository's `main` branch. GitHub Actions verifies the change and CodePipeline creates a Terraform plan. Review the CodeBuild plan log and approval details in CodePipeline; approve only if the guard passes and the existing runtime is updated in place.
+## 3. Initialize app state and deploy the app
 
-The state and artifact buckets, CodePipeline executions, CodeBuild minutes, and CloudWatch Logs can incur AWS charges. No dedicated KMS key is used, avoiding its recurring monthly key charge. Review the AWS plan and account credits before applying the pipeline infrastructure.
+Create the Secrets Manager secret expected by `main.tf` (`incident-triage-demo/openai`) with JSON field `OPENAI_API_KEY`. The API key must not be placed in Terraform variables, source control, build output, or shell history.
+
+```powershell
+uv sync --locked
+uv run --locked pytest -q
+uv run --locked python build.py
+terraform init -backend-config="bucket=$stateBucket"
+terraform plan -out=app.tfplan
+terraform show app.tfplan
+```
+
+For a first deployment, review the plan and confirm it creates only the expected app resources. For an existing deployment, ensure you have its correct state and that the plan does not create a duplicate runtime. Apply only after this review:
+
+```powershell
+terraform apply app.tfplan
+terraform output -raw runtime_arn
+terraform output -raw artifact_bucket_name
+```
+
+Back up the local state securely before migrating it to S3. If resources already exist, import them or migrate their owning state; do not create duplicate resources by pointing a fresh state at an existing deployment.
+
+## 4. Configure your GitHub repository
+
+Push this project to the default branch of a repository you control. In `cicd/variables.tf`, set `github_owner`, `github_repository`, and `github_branch` to match your repository. Defaults are examples only.
+
+Initialize the CI/CD root with the same state bucket, then create a local ignored variables file from the example:
+
+```powershell
+terraform -chdir=cicd init -backend-config="bucket=$stateBucket"
+Copy-Item cicd/terraform.tfvars.example cicd/terraform.tfvars
+```
+
+Fill in `state_bucket_name`, `app_artifact_bucket_name`, and `agent_runtime_arn` using the outputs from the bootstrap and app roots. Keep `terraform.tfvars` local; it is ignored by Git.
+
+Create and review the pipeline plan:
+
+```powershell
+terraform -chdir=cicd plan -out=../pipeline.tfplan
+terraform -chdir=cicd show ..\pipeline.tfplan
+```
+
+Confirm the plan creates the CI/CD resources and does not modify or replace your AgentCore runtime. Then apply the saved plan:
+
+```powershell
+terraform -chdir=cicd apply ..\pipeline.tfplan
+```
+
+## 5. Authorize the AWS connection and test a release
+
+The connection starts in `PENDING`. In AWS Console, open **Developer Tools → Settings → Connections**, select `incident-triage-github`, and authorize your repository. Wait until the connection is `AVAILABLE`.
+
+Push a small change. GitHub Actions should run CI, then the AWS pipeline should fetch the commit, build and test it, and create a Terraform plan. Inspect the plan and guard result before approving. The apply stage uses the saved reviewed plan and runs both live smoke cases; expected statuses are `incident: ok` and `tool_failure: evidence_unavailable`.
+
+## Account and state separation
+
+Each deployer should use a separate AWS project/account and a separate state bucket. Do not share Terraform state between independent installations. The application, bootstrap, and pipeline Terraform roots use separate state keys within one installation's bucket. Treat the state bucket as sensitive infrastructure and preserve its versioning and deletion protection.

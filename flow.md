@@ -1,5 +1,7 @@
 # Incident triage agent flow
 
+> Historical build journal from the original deployment. It documents observed versions and account-local steps; use README.md and CICD.md to deploy a separate copy. Do not reuse the original AWS profile, state, or runtime identifiers.
+
 We built a small agent locally for Amazon Bedrock AgentCore. It answers “Why is checkout returning 503s?” from two sample log events. The same example lets us show a normal result and a tool failure during a release check.
 
 ## 1. Write the triage logic
@@ -49,7 +51,7 @@ On this machine, Terraform 1.14.5 is in `.tools/terraform-1.14.5/terraform.exe`.
 
 ## 5. Check the AWS project and preview the first Bedrock deployment
 
-On November 18, 2026, we used the existing `agentcore-test` profile in `us-east-2`. STS confirmed the project role, and the Free Tier API reported an active Free plan. AWS reported `amazon.nova-lite-v1:0` as available and authorized in Ohio, and it appeared in the on-demand text model list. These checks help confirm the target before changing anything. [Free-plan services](https://docs.aws.amazon.com/accounts/latest/reference/supported-services-sign-up-new.html) · [Model availability API](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_GetFoundationModelAvailability.html)
+On November 18, 2026, we used the original local AWS profile in `us-east-2`. STS confirmed the project role, and the Free Tier API reported an active Free plan. AWS reported `amazon.nova-lite-v1:0` as available and authorized in Ohio, and it appeared in the on-demand text model list. These checks help confirm the target before changing anything. [Free-plan services](https://docs.aws.amazon.com/accounts/latest/reference/supported-services-sign-up-new.html) · [Model availability API](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_GetFoundationModelAvailability.html)
 
 The profile uses console sign-in credentials. Our local checks used `uv run --locked --with 'boto3[crt]==1.44.5'` to add the sign-in support in a temporary Python environment. The deployed agent uses its own IAM role. [Boto3 sign-in setup](https://docs.aws.amazon.com/boto3/latest/guide/credentials.html#login-with-console-credentials)
 
@@ -117,7 +119,7 @@ uv run --locked python smoke.py --local-live
 
 Terraform reads the secret's ARN. The runtime role can use that ARN to read the value when it first needs to call OpenAI. [Create a secret](https://docs.aws.amazon.com/secretsmanager/latest/userguide/create_secret.html) · [Terraform secret metadata](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/secretsmanager_secret)
 
-After the local test passed, we created that secret in Ohio from the key in `.env` using the AWS SDK and the existing `agentcore-test` profile. AWS confirmed the Free plan was active. The ZIP inspection confirmed the application and OpenAI SDK were included and the local `.env` file was excluded.
+After the local test passed, we created that secret in Ohio from the key in `.env` using the AWS SDK and the original local AWS profile. AWS confirmed the Free plan was active. The ZIP inspection confirmed the application and OpenAI SDK were included and the local `.env` file was excluded.
 
 ### Update the existing AgentCore Runtime
 
@@ -131,7 +133,7 @@ terraform apply -input=false .tools/incident-triage-openai.tfplan
 
 ### Verify version 2 on AWS
 
-Terraform updated the existing `incident_triage_demo` runtime. AWS confirmed `DEFAULT` was **READY** on version **2**. We ran the same two smoke cases against that version with the `agentcore-test` profile in Ohio.
+Terraform updated the existing `incident_triage_demo` runtime. AWS confirmed `DEFAULT` was **READY** on version **2**. We ran the same two smoke cases against that version with the the original local AWS profile in Ohio.
 
 ```powershell
 $runtimeArn = terraform output -raw runtime_arn
@@ -143,7 +145,7 @@ uv run --locked --with 'boto3[crt]==1.44.5' python smoke.py --runtime-arn $runti
 | Checkout incident | `ok`, evidence IDs `evt-001` and `evt-002` | `667b881154fb46b5956f50a0e386c601` |
 | Simulated tool failure | `evidence_unavailable`, empty evidence list | `8c008da025fa477695983e013359de8a` |
 
-CloudWatch Logs recorded both request IDs and `model=gpt-6-luna effort=medium`. Look in `/aws/bedrock-agentcore/runtimes/incident_triage_demo-pWYrie6l4Z-DEFAULT`. The span stream returned zero events and the trace destination was still X-Ray. [AgentCore logs and traces](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-view.html)
+CloudWatch Logs recorded both request IDs and `model=gpt-6-luna effort=medium`. Look in `/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT`. The span stream returned zero events and the trace destination was still X-Ray. [AgentCore logs and traces](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-view.html)
 
 ### Try the agent in the console
 
@@ -190,7 +192,7 @@ For a quick demo, use **AgentCore → Agents → incident_triage_demo → DEFAUL
 
 The 40.9 MiB Linux ZIP passed its integrity check, contains the Agents SDK, and matches the current `main.py` and `triage.py`. Terraform validation also passed. Local Terraform state points to the existing `incident_triage_demo` runtime in Ohio.
 
-The automatic approval review initially rejected the preview under the earlier cleanup-only instruction. After the user superseded that instruction for this release, we verified that the saved plan contained an in-place runtime update and a replacement of the ZIP. Terraform applied it on November 18, 2026, with the `agentcore-test` profile in `us-east-2`. The existing `DEFAULT` endpoint reported **READY**, version **3**, and AWS referenced the verified SDK ZIP.
+The automatic approval review initially rejected the preview under the earlier cleanup-only instruction. After the user superseded that instruction for this release, we verified that the saved plan contained an in-place runtime update and a replacement of the ZIP. Terraform applied it on November 18, 2026, with the the original local AWS profile in `us-east-2`. The existing `DEFAULT` endpoint reported **READY**, version **3**, and AWS referenced the verified SDK ZIP.
 
 ```powershell
 terraform plan -input=false -out .tools/incident-triage-sdk.tfplan
@@ -204,6 +206,6 @@ uv run --locked --with 'boto3[crt]==1.44.5' python smoke.py --runtime-arn $runti
 | Checkout incident | `ok`, evidence IDs `evt-001` and `evt-002` | The log lookup, Secrets Manager read, and OpenAI Responses call. The model span recorded `gpt-6-luna` and `medium`. | `cfdf136b202749f397ce4075e47dac7f` |
 | Simulated tool failure | `evidence_unavailable`, empty evidence list | The log lookup span recorded `ERROR` for the simulated failure. The trace ended before model inference. | `0c7da6c3123e43749da11a5bbcfe6d54` |
 
-Both smoke cases passed on version 3. CloudWatch trace routing was active, and the request IDs matched logs and spans in `/aws/bedrock-agentcore/runtimes/incident_triage_demo-pWYrie6l4Z-DEFAULT`. [AgentCore logs and traces](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-view.html)
+Both smoke cases passed on version 3. CloudWatch trace routing was active, and the request IDs matched logs and spans in `/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT`. [AgentCore logs and traces](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-view.html)
 
 **Demo version 3 in Ohio.** Open [AgentCore](https://console.aws.amazon.com/bedrock-agentcore/home?region=us-east-2), choose **Agents → incident_triage_demo → DEFAULT → Test endpoint**, and use the JSON payloads in [Try the agent in the console](#try-the-agent-in-the-console). In the traces, show where the successful request reaches OpenAI and where the simulated failure stops.
