@@ -237,6 +237,7 @@ resource "aws_iam_role_policy" "codebuild" {
           "bedrock-agentcore:ListAgentRuntimeEndpoints",
           "bedrock-agentcore:GetAgentRuntimeEndpoint",
           "bedrock-agentcore:ListAgentRuntimeVersions",
+          "bedrock-agentcore:ListTagsForResource",
           "bedrock-agentcore:InvokeAgentRuntime",
         ]
         Resource = [var.agent_runtime_arn, local.runtime_endpoint_arn]
