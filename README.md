@@ -112,14 +112,6 @@ The agent creates OpenTelemetry spans for the request, evidence lookup, and Open
 - The deployment pipeline includes a manual approval gate by design.
 - The original owner's live deployment and AWS state are separate from a public user's copy.
 
-## Five things I learned building this
-
-1. **An AI agent still needs ordinary software engineering.** Keep tool behavior, error handling, tests, and model calls understandable and independently checkable.
-2. **Serverless does not mean “no infrastructure.”** AgentCore runs the workload, while IAM, S3, Secrets Manager, networking, and logs still need explicit configuration.
-3. **Credentials belong outside the code.** The local demo uses an ignored `.env`; the deployed runtime reads its model key from Secrets Manager through an IAM role.
-4. **Observability helps explain a request.** Traces can show the evidence and model steps, while CloudWatch metrics and logs help diagnose runtime health. Instrumentation only helps if useful signals are emitted and retained.
-5. **A safe pipeline makes infrastructure changes reviewable.** CI checks the change; Terraform plans show proposed infrastructure actions; a manual approval gate precedes apply; live smoke tests check the deployed behavior.
-
 ## Learning notes
 
 This project was built as a hands-on introduction to serverless agents, AWS infrastructure, observability, and CI/CD. [THINGS_TO_EXPLORE.md](THINGS_TO_EXPLORE.md) has follow-on exercises. The detailed [flow.md](flow.md) is a historical build journal and includes owner-specific deployment evidence; use the setup guide above to deploy your own copy.
