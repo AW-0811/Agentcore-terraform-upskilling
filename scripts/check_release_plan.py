@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import sys
 
-
 ALLOWED_ACTIONS = {
     "aws_bedrockagentcore_agent_runtime.triage": {("update",)},
     "aws_s3_object.agent": {("create", "delete")},
