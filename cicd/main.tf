@@ -198,7 +198,7 @@ resource "aws_iam_role_policy" "codebuild" {
       },
       {
         Effect   = "Allow"
-        Action   = ["s3:GetBucketPolicy"]
+        Action   = ["s3:GetBucketPolicy", "s3:GetBucketCORS"]
         Resource = local.app_bucket_arn
       },
       {
