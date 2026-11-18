@@ -4,10 +4,10 @@ phases:
   install:
     commands:
       - curl -fsSL https://astral.sh/uv/0.10.2/install.sh | sh
-      - curl -fsSLo /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.14.5/terraform_1.14.5_linux_amd64.zip
+      - curl -fsSLo /tmp/terraform_1.14.5_linux_amd64.zip https://releases.hashicorp.com/terraform/1.14.5/terraform_1.14.5_linux_amd64.zip
       - curl -fsSLo /tmp/terraform_SHA256SUMS https://releases.hashicorp.com/terraform/1.14.5/terraform_1.14.5_SHA256SUMS
-      - grep 'terraform_1.14.5_linux_amd64.zip$' /tmp/terraform_SHA256SUMS | sha256sum -c -
-      - unzip -oq /tmp/terraform.zip -d /tmp/terraform
+      - cd /tmp && grep 'terraform_1.14.5_linux_amd64.zip$' terraform_SHA256SUMS | sha256sum -c -
+      - unzip -oq /tmp/terraform_1.14.5_linux_amd64.zip -d /tmp/terraform
       - export PATH="/tmp/terraform:$HOME/.local/bin:$PATH"
   pre_build:
     commands:
