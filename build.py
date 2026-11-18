@@ -71,7 +71,9 @@ def main() -> None:
                     continue
                 if path.is_file():
                     data = path.read_bytes()
-                    if relative.name == "RECORD" and ".dist-info" in relative.parts:
+                    if relative.name == "RECORD" and relative.parent.name.endswith(
+                        ".dist-info"
+                    ):
                         data = b"".join(
                             line
                             for line in data.splitlines(keepends=True)
