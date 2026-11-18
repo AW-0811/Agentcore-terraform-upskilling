@@ -197,6 +197,11 @@ resource "aws_iam_role_policy" "codebuild" {
         Resource = [local.state_bucket_arn, local.app_bucket_arn, aws_s3_bucket.pipeline_artifacts.arn]
       },
       {
+        Effect   = "Allow"
+        Action   = ["s3:GetBucketPolicy"]
+        Resource = local.app_bucket_arn
+      },
+      {
         Effect = "Allow"
         Action = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObject"]
         Resource = [
@@ -225,7 +230,7 @@ resource "aws_iam_role_policy" "codebuild" {
       },
       {
         Effect   = "Allow"
-        Action   = ["iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies"]
+        Action   = ["iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies"]
         Resource = "arn:${local.partition}:iam::${local.account_id}:role/incident-triage-demo-runtime"
       },
       {
@@ -238,7 +243,7 @@ resource "aws_iam_role_policy" "codebuild" {
       },
       {
         Effect   = "Allow"
-        Action   = ["secretsmanager:DescribeSecret"]
+        Action   = ["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"]
         Resource = data.aws_secretsmanager_secret.openai.arn
       },
       {
