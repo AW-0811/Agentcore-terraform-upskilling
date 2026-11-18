@@ -11,7 +11,7 @@ phases:
       - export PATH="/tmp/terraform:$HOME/.local/bin:$PATH"
   pre_build:
     commands:
-      - cd "$CODEBUILD_SRC_DIR/.."
+      - cd "$CODEBUILD_SRC_DIR"
       - export PATH="/tmp/terraform:$HOME/.local/bin:$PATH"
       - export AWS_DEFAULT_REGION=us-east-2
       - test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
@@ -19,7 +19,7 @@ phases:
       - terraform init -input=false -lockfile=readonly -backend-config="bucket=$TF_STATE_BUCKET"
   build:
     commands:
-      - cd "$CODEBUILD_SRC_DIR/.."
+      - cd "$CODEBUILD_SRC_DIR"
       - terraform apply -input=false -no-color -lock-timeout=2m -auto-approve release.tfplan
       - runtime_arn="$(terraform output -raw runtime_arn)"
       - uv run --locked --with 'boto3[crt]==1.44.5' python smoke.py --runtime-arn "$runtime_arn"

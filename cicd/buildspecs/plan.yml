@@ -11,7 +11,7 @@ phases:
       - export PATH="/tmp/terraform:$HOME/.local/bin:$PATH"
   pre_build:
     commands:
-      - cd "$CODEBUILD_SRC_DIR/.."
+      - cd "$CODEBUILD_SRC_DIR"
       - export PATH="/tmp/terraform:$HOME/.local/bin:$PATH"
       - export AWS_DEFAULT_REGION=us-east-2
       - test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
@@ -24,7 +24,7 @@ phases:
       - terraform validate
   build:
     commands:
-      - cd "$CODEBUILD_SRC_DIR/.."
+      - cd "$CODEBUILD_SRC_DIR"
       - uv run --locked python build.py
       - terraform plan -input=false -no-color -lock-timeout=2m -out=release.tfplan
       - terraform show -json release.tfplan | python scripts/check_release_plan.py
