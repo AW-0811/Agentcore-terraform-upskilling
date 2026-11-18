@@ -52,8 +52,8 @@ def invoke_local(payload: dict) -> dict:
         return json.load(response)
 
 
-def check_runtime(runtime_arn: str) -> None:
-    session = boto3.Session(profile_name="agentcore-test", region_name="us-east-2")
+def check_runtime(runtime_arn: str, profile_name: str | None = None) -> None:
+    session = boto3.Session(profile_name=profile_name, region_name="us-east-2")
     client = session.client(
         "bedrock-agentcore",
         config=Config(
@@ -87,9 +87,13 @@ def main() -> None:
         action="store_true",
         help="Expect real OpenAI mode on localhost.",
     )
+    parser.add_argument(
+        "--profile",
+        help="Optional AWS CLI profile for deployed runtime checks. Defaults to the standard credential chain.",
+    )
     args = parser.parse_args()
     if args.runtime_arn:
-        check_runtime(args.runtime_arn)
+        check_runtime(args.runtime_arn, profile_name=args.profile)
     else:
         check(invoke_local, "openai" if args.local_live else "offline")
 
