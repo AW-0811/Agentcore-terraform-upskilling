@@ -70,7 +70,14 @@ def main() -> None:
                 if relative.parts[0] == "bin" or "__pycache__" in relative.parts:
                     continue
                 if path.is_file():
-                    add_file(archive, relative.as_posix(), path.read_bytes())
+                    data = path.read_bytes()
+                    if relative.name == "RECORD" and ".dist-info" in relative.parts:
+                        data = b"".join(
+                            line
+                            for line in data.splitlines(keepends=True)
+                            if not line.startswith(b"bin/")
+                        )
+                    add_file(archive, relative.as_posix(), data)
             add_file(
                 archive,
                 "bin/opentelemetry-instrument",
