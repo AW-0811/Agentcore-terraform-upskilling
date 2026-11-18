@@ -21,7 +21,13 @@ phases:
       - uv run --locked pytest -q
       - terraform fmt -check -recursive
       - terraform init -input=false -lockfile=readonly -backend-config="bucket=$TF_STATE_BUCKET"
-      - terraform validate -no-color > /tmp/terraform-validate.stdout 2> /tmp/terraform-validate.stderr; validate_status=$?; cat /tmp/terraform-validate.stdout; cat /tmp/terraform-validate.stderr >&2; echo "terraform validate exit code: $validate_status"; exit "$validate_status"
+      - |
+        terraform validate -no-color > /tmp/terraform-validate.stdout 2> /tmp/terraform-validate.stderr
+        validate_status=$?
+        cat /tmp/terraform-validate.stdout
+        cat /tmp/terraform-validate.stderr >&2
+        echo "terraform validate exit code: $validate_status"
+        exit "$validate_status"
   build:
     commands:
       - cd "$CODEBUILD_SRC_DIR"
