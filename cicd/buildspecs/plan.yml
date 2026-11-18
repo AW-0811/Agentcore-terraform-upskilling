@@ -20,6 +20,7 @@ phases:
       - uv run --locked ruff check .
       - uv run --locked pytest -q
       - terraform fmt -check -recursive
+      - uv run --locked python build.py
       - terraform init -input=false -lockfile=readonly -backend-config="bucket=$TF_STATE_BUCKET"
       - |
         terraform validate -no-color > /tmp/terraform-validate.stdout 2> /tmp/terraform-validate.stderr
@@ -31,7 +32,6 @@ phases:
   build:
     commands:
       - cd "$CODEBUILD_SRC_DIR"
-      - uv run --locked python build.py
       - terraform plan -input=false -no-color -lock-timeout=2m -out=release.tfplan
       - terraform show -json release.tfplan | python scripts/check_release_plan.py
       - mkdir -p release-bundle
